@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "diffusion-ensemble"
+version = "0.1.0"
+description = "Use different diffusion algorithms and combine their outputs using another diffusion algorithm which interpolates between a latent representation of the previous results and outputs an image containing something from both the inputs."
+authors = ["fusedbloxxer <voidwarden@yahoo.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "diffusion_ensemble"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "^1.23.5"
+matplotlib = "^3.6.2"
+sklearn = "^0.0.post1"
+scikit-learn = "^1.2.0"
+opencv-python = "^4.6.0.66"
+notebook = "^6.5.2"
+diffusers = {extras = ["torch"], version = "^0.10.2"}
+torch = "^1.13.0"
+torchvision = "^0.14.0"
+torchaudio = "^0.13.0"
+pandas = "^1.5.2"
+transformers = "^4.25.1"
+
+[tool.poetry.group.dev.dependencies]
+jupyter = "^1.0.0"
+autopep8 = "^2.0.0"
+nvitop = "^0.11.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
