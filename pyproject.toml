@@ -26,6 +26,8 @@ transformers = "^4.25.1"
 jupyter = "^1.0.0"
 autopep8 = "^2.0.0"
 nvitop = "^0.11.0"
+ninja = "^1.11.1"
+
 
 [build-system]
 requires = ["poetry-core"]
