@@ -1,6 +1,6 @@
 # Created by https://www.toptal.com/developers/gitignore/api/python,jupyternotebooks,visualstudiocode,windows,linux,git,latex
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,jupyternotebooks,visualstudiocode,windows,linux,git,latex
-/repo/*
+/repos/*
 
 ### Git ###
 # Created by git for backups. To disable backups in Git:
