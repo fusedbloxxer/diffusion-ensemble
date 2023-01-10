@@ -53,28 +53,41 @@ class VQModel(pl.LightningModule):
         self.load_state_dict(sd, strict=False)
         print(f"Restored from {path}")
 
-    def encode(self, x):
+    def encode_to_preconv(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.encoder(x)
+        return h
+
+    def encode_to_prequant(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.encoder(x)
+        h = self.quant_conv(h)
+        return h
+
+    def encode(self, x: torch.Tensor):
         h = self.encoder(x)
         h = self.quant_conv(h)
         quant, emb_loss, info = self.quantize(h)
         return quant, emb_loss, info
 
-    def encode_to_prequant(self, x):
-        h = self.encoder(x)
-        h = self.quant_conv(h)
-        return h
+    def decode_from_preconv(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.quant_conv(x)
+        quant, _, _ = self.quantize(h)
+        return self.decode(quant)
 
-    def decode(self, quant):
-        quant = self.post_quant_conv(quant)
-        dec = self.decoder(quant)
-        return dec
+    def decode_from_prequant(self, x: torch.Tensor) -> torch.Tensor:
+        quant, _, _ = self.quantize(x)
+        return self.decode(quant)
 
-    def decode_code(self, code_b):
+    def decode_code(self, code_b) -> torch.Tensor:
         quant_b = self.quantize.embed_code(code_b)
         dec = self.decode(quant_b)
         return dec
 
-    def forward(self, input):
+    def decode(self, quant: torch.Tensor) -> torch.Tensor:
+        quant = self.post_quant_conv(quant)
+        dec = self.decoder(quant)
+        return dec
+
+    def forward(self, input: torch.Tensor):
         quant, diff, _ = self.encode(input)
         dec = self.decode(quant)
         return dec, diff

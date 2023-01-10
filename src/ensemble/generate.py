@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 import os
 
-from .models import Model
+from .blocks import Model
 
 
 class DiffusionModel(Model):
@@ -129,12 +129,25 @@ class DiffusersOutput(object):
       values.append(itertools.product([model_name], self.model_dict[model_name]))
     self.prompt_outputs = list(zip(self.prompts, zip(*values)))
 
-  def __getitem__(self, prompt_index: int) -> torch.Tensor:
-    """Stack all generated images for a prompt."""
+  def __getitem__(self, prompt_index: int | slice) -> torch.Tensor:
+    """Stack all generated images for various prompts."""
+    if isinstance(prompt_index, int):
+      prompt_index = slice(prompt_index, prompt_index + 1)
+
+    # Find all images from all models for each prompt
     imgs = []
-    prompt, prompt_imgs = self.prompt_outputs[prompt_index]
-    for model_name, model_imgs in prompt_imgs:
-      imgs.append(model_imgs)
+    for _, prompt_imgs in self.prompt_outputs[prompt_index]:
+      single_prompt_imgs = []
+
+      # Fetch all model imgs for a prompt
+      for _, model_imgs in prompt_imgs:
+        single_prompt_imgs.append(model_imgs)
+
+      # Group and save
+      single_prompt_imgs = torch.vstack(single_prompt_imgs).unsqueeze(0)
+      imgs.append(single_prompt_imgs)
+
+    # Stack on the prompt axis
     return torch.vstack(imgs)
 
   def __iter__(self) -> 'DiffusersOutput':
@@ -177,28 +190,36 @@ class DiffusersOutput(object):
         max_cols = n_imgs_row
 
     # Define plot
-    f, ax = plt.subplots(nrows=max_rows, ncols=max_cols, figsize=(10, 10))
-    f.tight_layout()
+    f, ax = plt.subplots(nrows=max_rows, ncols=max_cols, figsize=(15, 15))
 
-    def show_image(i: int, skip: int, stride: int, img: torch.Tensor, nrows: int, ncols: int, ax: plt.Axes) -> None:
+    def show_image(i: int, skip: int, stride: int, model: str, img: torch.Tensor, prompt: str,
+                   nrows: int, ncols: int, ax: plt.Axes) -> None:
+      # Obtain the current axis of the subplot
       if nrows > 1 and ncols > 1:
-        ax[i][skip + stride].imshow(img)
+        c_axis = ax[i][skip + stride]
       elif nrows == 1 and ncols > 1:
-        ax[skip + stride].imshow(img)
+        c_axis = ax[skip + stride]
       elif ncols == 1 and nrows > 1:
-        ax[i].imshow(img)
+        c_axis = ax[i]
       else:
-        ax.imshow(img)
+        c_axis = ax
+
+      # Show the image and its prompt
+      c_axis.imshow(img)
+      c_axis.set_title(prompt, wrap=True)
+      c_axis.set_xlabel(model, wrap=True)
 
     # Start plotting values
     for i, (prompt, model_prompt) in enumerate(self):
       skip_cols = 0
       for j, (model_name, values) in enumerate(model_prompt):
         for offset, image in enumerate(values):
-          show_image(i, skip_cols, offset, image, max_rows, max_cols, ax)
+          current_prompt = self.prompt_modifier(prompt, i, j, model_name)
+          show_image(i, skip_cols, offset, model_name, image, current_prompt, max_rows, max_cols, ax)
 
         # Add more jumpts
         skip_cols += values.shape[0]
+    f.tight_layout()
     plt.show()
 
 
@@ -259,4 +280,13 @@ class DiffusersModel(Model):
 
     # Aggregate all results
     return DiffusersOutput(imgs, prompt, prompt_modifier)
+
+
+def prompt_changer(p: str, p_i: int, m_i: int, m: str) -> str:
+  if m_i == 0:
+    return p
+  elif m_i == 1:
+    return p + ', ghibli style'
+  else:
+    return p
 

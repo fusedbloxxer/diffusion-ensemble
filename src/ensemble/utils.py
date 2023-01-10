@@ -12,32 +12,6 @@ from omegaconf import OmegaConf, DictConfig, ListConfig
 from taming.models.vqgan import VQModel, GumbelVQ
 
 
-def load_config(path_to_file: pb.Path, verbose: bool = True) -> (DictConfig | ListConfig):
-  if not path_to_file.exists():
-    raise Exception(f'{path_to_file} does not exist')
-  if not path_to_file.is_file():
-    raise Exception(f'{path_to_file} is not a file')
-
-  # Load the yaml file from disk
-  config = OmegaConf.load(path_to_file)
-
-  if verbose:
-    print(OmegaConf.to_yaml(config))
-
-  return config
-
-
-def load_vqgan(config, ckpt_path=None, is_gumbel=False):
-  if is_gumbel:
-    model = GumbelVQ(**config.model.params)
-  else:
-    model = VQModel(**config.model.params)
-  if ckpt_path is not None:
-    sd = torch.load(ckpt_path, map_location="cpu")["state_dict"]
-    missing, unexpected = model.load_state_dict(sd, strict=False)
-  return model.eval()
-
-
 def unzip_at_dir(zip_path: pb.Path, out_dir: pb.Path, exist_ok: bool = True) -> None:
   if not zip_path.exists():
     raise Exception(f'No zip file exists at: {zip_path}')
