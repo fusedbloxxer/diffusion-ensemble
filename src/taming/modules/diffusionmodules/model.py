@@ -345,7 +345,9 @@ class Encoder(nn.Module):
                  resolution, z_channels, double_z=True, **ignore_kwargs):
         super().__init__()
         self.ch = ch
+        self.z_channels = z_channels
         self.temb_ch = 0
+        self.ch_mult = ch_mult
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution
@@ -440,6 +442,8 @@ class Decoder(nn.Module):
         super().__init__()
         self.ch = ch
         self.temb_ch = 0
+        self.z_channels = z_channels
+        self.ch_mult = ch_mult
         self.num_resolutions = len(ch_mult)
         self.num_res_blocks = num_res_blocks
         self.resolution = resolution

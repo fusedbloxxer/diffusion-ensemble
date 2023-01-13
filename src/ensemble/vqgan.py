@@ -23,6 +23,16 @@ class VQGAN(Model):
   def quantize(self, z, temp=None, rescale_logits=False, return_logits=False):
     return self.model.quantize(z, temp, rescale_logits, rescale_logits)
 
+  def encode_to_layer(self, x: torch.Tensor, at_layer: str) -> torch.Tensor:
+    assert at_layer in ['preconv', 'prequant', 'postquant']
+    if at_layer == 'preconv':
+      return self.encode_to_preconv(x)
+    elif at_layer == 'prequant':
+      return self.encode_to_prequant(x)
+    elif at_layer == 'postquant':
+      h, _, _ = self.encode(x)
+      return h
+
   def encode_to_preconv(self, x: torch.Tensor) -> torch.Tensor:
     return self.model.encode_to_preconv(x)
 
@@ -31,6 +41,15 @@ class VQGAN(Model):
 
   def encode(self, x):
     return self.model.encode(x)
+
+  def decode_from_layer(self, x: torch.Tensor, at_layer: str) -> torch.Tensor:
+    assert at_layer in ['preconv', 'prequant', 'postquant']
+    if at_layer == 'preconv':
+      return self.decode_from_preconv(x)
+    elif at_layer == 'prequant':
+      return self.decode_from_prequant(x)
+    elif at_layer == 'postquant':
+      return self.decode(x)
 
   def decode_from_preconv(self, x: torch.Tensor) -> torch.Tensor:
     return self.model.decode_from_preconv(x)

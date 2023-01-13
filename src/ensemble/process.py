@@ -27,7 +27,7 @@ def postprocess(images: torch.Tensor, size: int = 256) -> torch.Tensor:
 
 def postprocess_image(image: np.ndarray, t: Compose) -> torch.Tensor:
   # Adjust the output to [-1, 1]
-  image = np.clip(image, a_min=-1.0, a_max=1.0)
+  image = np.clip(image, -1, 1)
 
   # Map from [-1, 1] to [0, 1]
   image = (image + 1.) / 2.

@@ -1693,6 +1693,28 @@ files = [
 ]
 
 [[package]]
+name = "kornia"
+version = "0.6.9"
+description = "Open Source Differentiable Computer Vision Library for PyTorch"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "kornia-0.6.9-py2.py3-none-any.whl", hash = "sha256:e60c64c0ae8073ac5cb767a497701a0a8c9fbe44b1da3072ea1cee41fe5e21b1"},
+    {file = "kornia-0.6.9.tar.gz", hash = "sha256:b756bba0db8d47046417fa72271b2d648c570ec6f1d61e1805e6a36911f63bb9"},
+]
+
+[package.dependencies]
+accelerate = {version = "0.15.0", optional = true, markers = "extra == \"x\""}
+packaging = "*"
+torch = ">=1.9.1"
+
+[package.extras]
+dev = ["isort", "kornia-rs (==0.0.5)", "mypy[reports]", "numpy", "opencv-python", "pre-commit (>=2.0)", "pydocstyle", "pytest (==7.2.0)", "pytest-cov (==4.0.0)", "scipy"]
+docs = ["PyYAML (>=5.1,<6.1.0)", "furo", "matplotlib", "opencv-python", "sphinx (>=4.0)", "sphinx-autodoc-defaultargs", "sphinx-autodoc-typehints (>=1.0)", "sphinx-copybutton (>=0.3)", "sphinx-design", "sphinx-rtd-theme (>0.5)", "sphinxcontrib-bibtex", "sphinxcontrib-gtagjs", "sphinxcontrib-youtube", "torch", "torchvision"]
+x = ["accelerate (==0.15.0)"]
+
+[[package]]
 name = "lightning-utilities"
 version = "0.5.0"
 description = "PyTorch Lightning Sample project."
@@ -4465,4 +4487,4 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "4fad5bfd27f72180f4a55e5095b78ff2e49918d5afea915465fadddb89876b49"
+content-hash = "f7e4398802cb840d91c705c298dc78d7dfd141b96ae3dcc4f3ac42d5d069d3fa"

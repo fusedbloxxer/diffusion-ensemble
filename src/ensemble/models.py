@@ -3,9 +3,16 @@ from typing import Tuple, Any, List, Dict, Optional
 import torch
 import pathlib as pb
 import torch.nn as nn
+import torchvision as tv
+import torchvision.transforms as T
 from omegaconf import OmegaConf, DictConfig, ListConfig
+from matplotlib import pyplot as plt
+from IPython import display
+import kornia as K
+import kornia.augmentation as KA
 
 from taming.models.vqgan import GumbelVQ, VQModel
+from taming.modules.losses.lpips import LPIPS
 
 from .generate import DiffusersModel
 from .vqgan import VQGAN
@@ -25,8 +32,12 @@ class DiffusionEnsemble(Model):
     self.diffusers = DiffusersModel(diffusers, num_inference_steps, verbose)
     self.vqgan = VQGAN(vqgan_config_path, vqgan_ckpt_path, verbose)
 
-  def compose(self, x: torch.Tensor, coef: torch.Tensor, at_layer: str = 'postquant'):
-    """Summary
+    # According to: https://github.com/richzhang/PerceptualSimilarity
+    # Expects RGB images normalized to [-1, 1]
+    self.perceptual_loss = LPIPS().eval()
+
+  def compose(self, x: torch.Tensor, coef: torch.Tensor, at_layer: str = 'postquant') -> torch.Tensor:
+    """Compose images in latent space and reconstruct them.
 
     Args:
         x (torch.Tensor): Tensor of size (N, M, C, H, W) where M is the number of
@@ -39,7 +50,7 @@ class DiffusionEnsemble(Model):
     assert x.ndim == 5, f'invalid input tensor size, expected 5 but got: {x.ndim}'
     assert x.shape[1] == len(self.diffusers.repos), f'diffusers count mismatch, got: {x.shape[1]}'
     assert at_layer in at_layer_options, f'invalid at_layer, got: {at_layer}'
-    assert torch.abs(coef.sum() - 1.0) <= 1e-6, f'the coef array must sum up to 1.0, got: {coef.sum()}'
+    # assert torch.abs(coef.sum() - 1.0) <= 1e-6, f'the coef array must sum up to 1.0, got: {coef.sum()}'
     assert coef.shape[0] == x.shape[1], f'mismatch coef shape with number of diffusion models, expected {x.shape[1]}, got: {coef.shape[0]}'
     N, M, C, H, W = x.size()
 
@@ -47,25 +58,165 @@ class DiffusionEnsemble(Model):
     h = x.reshape((N * M, C, H, W))
 
     # Encode the images up to a specific layer
-    if at_layer == 'preconv':
-      h = self.vqgan.encode_to_preconv(h)
-    elif at_layer == 'prequant':
-      h = self.vqgan.encode_to_prequant(h)
-    elif at_layer == 'postquant':
-      h, _, _ = self.vqgan.encode(h)
+    latent_vector = self.vqgan.encode_to_layer(h, at_layer)
 
     # Compose the latent vectors
-    h = h.reshape((N, M, *h.shape[1:]))
+    latent_vector = latent_vector.reshape((N, M, *latent_vector.shape[1:]))
     coef = coef.reshape((1, M, 1, 1, 1))
-    comp = torch.sum(coef * h, dim=1)
+    comp = torch.sum(coef * latent_vector, dim=1)
 
     # Decode the composed vectors
-    if at_layer == 'preconv':
-      h = self.vqgan.decode_from_preconv(comp)
-    elif at_layer == 'prequant':
-      h = self.vqgan.decode_from_prequant(comp)
-    elif at_layer == 'postquant':
-      h = self.vqgan.decode(comp)
+    return self.vqgan.decode_from_layer(comp, at_layer)
 
-    return h
+  def forward(self,
+              x: torch.Tensor,
+              coef: torch.Tensor,
+              at_layer: str = 'prequant',
+              n_steps: int = 10_000,
+              learn_rate: float = 15e-2,
+              latent_from: str = 'noise',
+              decay: Tuple[float, float, float] = (40, 0.95, 2e-4)) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Summary
+
+    Args:
+        x (torch.Tensor): Tensor of size (N, M, C, H, W) where M is the number of
+        diffusion models used in the ensemble.
+        coef (torch.Tensor): Tensor of N positive coefficients that should sum to 1.
+        at_layer (str): The layer which should be used to compose the M elements.
+        Can be one of: 'preconv' | 'prequant' | 'postquant'.
+        latent_from (str): The latent vector can be obtained either through
+        composing the input images with coef or by using noise as starting point.
+        Can be one of: 'noise' | 'input'.
+    """
+    latent_from_options = ['noise', 'input']
+    at_layer_options = ['preconv', 'prequant', 'postquant']
+    assert latent_from in latent_from_options, f'invalid latent_vector origin, got: {latent_from}'
+    assert x.ndim == 5, f'invalid input tensor size, expected 5 but got: {x.ndim}'
+    assert x.shape[1] == len(self.diffusers.repos), f'diffusers count mismatch, got: {x.shape[1]}'
+    assert at_layer in at_layer_options, f'invalid at_layer, got: {at_layer}'
+    # assert torch.abs(coef.sum() - 1.0) <= 1e-6, f'the coef array must sum up to 1.0, got: {coef.sum()}'
+    assert coef.shape[0] == x.shape[1], f'mismatch coef shape with number of diffusion models, expected {x.shape[1]}, got: {coef.shape[0]}'
+    N, M, C, H, W = x.size()
+
+    if latent_from == 'input':
+      # Batch processing N x M
+      h = x.reshape((N * M, C, H, W))
+
+      # Encode the images up to a specific layer
+      latent_vector = self.vqgan.encode_to_layer(h, at_layer)
+
+      # Compose the latent vectors
+      latent_vector = latent_vector.reshape((N, M, *latent_vector.shape[1:]))
+      latent_vector = torch.sum(coef.reshape((1, M, 1, 1, 1)) * latent_vector, dim=1)
+    else:
+      # Compute latent_vector size
+      l_N: int = N
+      l_C: int = self.vqgan.model.encoder.z_channels
+      l_H: int = H // 2 ** self.vqgan.model.encoder.ch_mult[-1]
+      l_W: int = W // 2 ** self.vqgan.model.encoder.ch_mult[-1]
+
+      # Init latent_vector from noise
+      latent_vector = torch.randn((l_N, l_C, l_H, l_W)).to(self.device)
+
+    # Create the optimizer w.r.t. the latent vector
+    latent_vector.requires_grad_(True)
+    optim = torch.optim.Adam([latent_vector], lr=learn_rate, betas=(0.9, 0.999))
+    sch_lr = torch.optim.lr_scheduler.StepLR(optim,
+                                                     step_size=decay[0],
+                                                     gamma=decay[1],
+                                                     verbose=self.verbose)
+
+    # Update the latent vector iteratively
+    for e in range(n_steps):
+      # Decode the composed vectors
+      rec_imgs = self.vqgan.decode_from_layer(latent_vector, at_layer)
+
+      # Normalize each output per-channel to [-1, 1]
+      rec_imgs = rec_imgs.clamp(-1, 1)
+
+      # Compute perceptual loss for the composed image against the model specific
+      inp_imgs = x.reshape(N * M, C, H, W)
+      rec_imgs = rec_imgs.unsqueeze(1).tile((1, M, 1, 1, 1)).reshape(N * M, C, H, W)
+
+      # Augment the image crops
+      p_loss: List[torch.Tensor] = []
+      crop_size: List[int] = [256, 128]
+      crop_nums: List[int] = [1, 12]
+      crop_imgs = self.crop_augment(inp_imgs,
+                                                                 rec_imgs,
+                                                                 crop_size,
+                                                                 crop_nums)
+      R = len(crop_nums)
+
+      # Compute perceptual loss for all crop sizes
+      for (input_crops, augmented_crops) in crop_imgs:
+        c_loss: torch.Tensor = self.perceptual_loss(input_crops, augmented_crops)
+        p_loss.append(c_loss.flatten(start_dim=0))
+
+      # Mean Weighted Loss
+      p_loss: torch.Tensor = torch.cat(p_loss, dim=0).reshape((-1, N, M))
+      p_loss = coef.tile((1, N, 1)) * p_loss
+      p_loss = p_loss.sum(dim=2).mean(dim=0)
+
+      # Total loss
+      loss = p_loss #+ #torch.mean(latent_vector ** 2) / (e + 1e-12)
+
+      # Reset gradients
+      optim.zero_grad()
+
+      # Propagate the gradient loss over the latent vectors in the batch
+      loss.backward()
+
+      # Update the latent vector
+      optim.step()
+      sch_lr.step()
+
+      # Display intermediary results
+      if e % 10 == 0:
+        display.clear_output()
+        h = x.reshape((N * M, C, H, W))
+        out_img = ((rec_imgs[0] + 1.) / 2).permute((1, 2, 0)).detach().cpu()
+        in_imgs = ((h + 1.) / 2).permute((0, 2, 3, 1)).cpu()
+
+        f, ax = plt.subplots(1, 3, figsize=(15, 15))
+        ax[0].imshow(in_imgs[0])
+        ax[1].imshow(in_imgs[1])
+        ax[2].imshow(out_img)
+        plt.title(f'[{e} / {n_steps}]: {p_loss.item()}, {sch_lr.get_lr()}')
+        plt.show()
+        print(loss.item())
+        print(coef.flatten())
+        print(p_loss.flatten())
+    return rec_imgs, p_loss
+
+  def crop_augment(self,
+                   inp_imgs: torch.Tensor,
+                   rec_imgs: torch.Tensor,
+                   crop_size: List[int] = [32, 64, 128, 128],
+                   crop_nums: List[int] = [32, 16,   8,   4]) -> List[Tuple[torch.Tensor, torch.Tensor]]:
+    crops = []
+    for i, (sz_crop, n_crops) in enumerate(zip(crop_size, crop_nums)):
+      # Make use of crops on each image
+      t_crop = KA.RandomCrop(size=(sz_crop,) * 2, same_on_batch=False)
+
+      # Tile the images: (R * N * M) x C x H x W
+      inp_crops = t_crop(inp_imgs.tile((n_crops, 1, 1, 1)))
+      rec_crops = t_crop(rec_imgs.tile((n_crops, 1, 1, 1)))
+
+      # Define augmentations to improve generalization
+      t_aug = KA.ImageSequential(
+        KA.RandomHorizontalFlip(p=0.5),
+        KA.ColorJiggle(0.1, 0.1, 0.1, 0.1, p=0.5),
+        KA.RandomGaussianNoise(mean=0, std=.5, p=0.5),
+        KA.RandomPerspective(distortion_scale=0.25, p=0.5),
+        KA.RandomAffine(degrees=(-15., 20.), translate=(.1, .25), scale=(.75, .95), p=0.5),
+      )
+
+      # # Augment the generated images
+      aug_crops = t_aug(rec_crops)
+      # aug_crops = rec_crops
+
+      # Save the crops
+      crops.append((inp_crops, aug_crops))
+    return crops
 
