@@ -284,11 +284,13 @@ class DiffusersModel(Model):
 
 def prompt_changer(p: str, p_i: int, m_i: int, m: str) -> str:
   if m_i == 0:
-    return 'castle'
+    return 'green landscape'
   elif m_i == 1:
-    return 'aquarium, ghibli style'
+    return 'group of people'
   elif m_i == 2:
     return 'fireworks'
   else:
     return p
 
+# landscape grup oameni, masina dog
+# two faces
