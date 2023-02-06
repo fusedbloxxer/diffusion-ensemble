@@ -85,7 +85,6 @@ class DiffusionEnsemble(Model):
               n_steps: int = 10_000,
               learn_rate: float = 15e-2,
               latent_from: str = 'noise',
-              loss_fun: str = 'clip',
               decay: Tuple[float, float, float] = (100, 0.9, 2e-4),
               composition: str = 'bar') -> Tuple[torch.Tensor, torch.Tensor]:
     """Summary
@@ -106,7 +105,6 @@ class DiffusionEnsemble(Model):
     latent_from_options = ['noise', 'input']
     at_layer_options = ['preconv', 'prequant', 'postquant']
     loss_fun_options = ['clip', 'perceptual']
-    assert loss_fun in loss_fun_options, f'invalid loss function, got: {loss_fun}'
     assert latent_from in latent_from_options, f'invalid latent_vector origin, got: {latent_from}'
     assert x.ndim == 5, f'invalid input tensor size, expected 5 but got: {x.ndim}'
     assert x.shape[1] == len(self.diffusers.repos), f'diffusers count mismatch, got: {x.shape[1]}'
