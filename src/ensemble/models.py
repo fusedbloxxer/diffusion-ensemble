@@ -131,8 +131,8 @@ class DiffusionEnsemble(Model):
       if composition == 'bar':
         latent_vector = torch.sum(coef.reshape((1, M, 1, 1, 1)) * latent_vector, dim=1)
       elif composition == 'rvec':
-        mask = torch.cat([torch.zeros(128), torch.ones(128)], dim=0).to(self.device, dtype=torch.int64).reshape((16, 16))
-        # mask: torch.Tensor = torch.randint(0, M, size=(l_H, l_W), device=self.device)
+        # mask = torch.cat([torch.zeros(128), torch.ones(128)], dim=0).to(self.device, dtype=torch.int64).reshape((16, 16))
+        mask: torch.Tensor = torch.randint(0, M, size=(l_H, l_W), device=self.device)
         mask: torch.Tensor = torch.nn.functional.one_hot(mask, M)
         mask: torch.Tensor = mask.permute((2, 0, 1))[None, :, None, ...]
         latent_vector = torch.sum(mask * latent_vector, dim=1)
