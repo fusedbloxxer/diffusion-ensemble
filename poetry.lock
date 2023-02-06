@@ -551,6 +551,25 @@ files = [
 unicode-backport = ["unicodedata2"]
 
 [[package]]
+name = "clip"
+version = "1.0"
+description = ""
+category = "main"
+optional = false
+python-versions = "*"
+files = []
+develop = false
+
+[package.extras]
+dev = ["pytest"]
+
+[package.source]
+type = "git"
+url = "https://github.com/openai/CLIP.git"
+reference = "HEAD"
+resolved_reference = "3702849800aa56e2223035bccd1c6ef91c704ca8"
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 description = "Cross-platform colored terminal text."
@@ -995,6 +1014,21 @@ sftp = ["paramiko"]
 smb = ["smbprotocol"]
 ssh = ["paramiko"]
 tqdm = ["tqdm"]
+
+[[package]]
+name = "ftfy"
+version = "6.1.1"
+description = "Fixes mojibake and other problems with Unicode, after the fact"
+category = "main"
+optional = false
+python-versions = ">=3.7,<4"
+files = [
+    {file = "ftfy-6.1.1-py3-none-any.whl", hash = "sha256:0ffd33fce16b54cccaec78d6ec73d95ad370e5df5a25255c8966a6147bd667ca"},
+    {file = "ftfy-6.1.1.tar.gz", hash = "sha256:bfc2019f84fcd851419152320a6375604a0f1459c281b5b199b2cd0d2e727f8f"},
+]
+
+[package.dependencies]
+wcwidth = ">=0.2.5"
 
 [[package]]
 name = "google-auth"
@@ -4487,4 +4521,4 @@ testing = ["flake8 (<5)", "func-timeout", "jaraco.functools", "jaraco.itertools"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "f7e4398802cb840d91c705c298dc78d7dfd141b96ae3dcc4f3ac42d5d069d3fa"
+content-hash = "6499d910be0875cb1c9adba7f1b34966e7ee2f3bd4164691683dd6aaabe54176"

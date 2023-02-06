@@ -1,6 +1,7 @@
 import typing
-from typing import Tuple, Any, List, Dict, Optional
+from typing import Tuple, Any, List, Dict, Optional, Callable
 import torch
+from torch import Tensor
 import pathlib as pb
 import torch.nn as nn
 import torchvision as tv
@@ -11,9 +12,9 @@ from IPython import display
 import kornia as K
 import kornia.augmentation as KA
 
-from taming.models.vqgan import GumbelVQ, VQModel
 from taming.modules.losses.lpips import LPIPS
 
+from .losses import ImageEncoderCLIP
 from .generate import DiffusersModel
 from .vqgan import VQGAN
 from .blocks import Model
@@ -24,6 +25,7 @@ class DiffusionEnsemble(Model):
                diffusers: List[str],
                vqgan_config_path: pb.Path,
                vqgan_ckpt_path: Optional[pb.Path] = None,
+               clip_path: pb.Path | None = None,
                num_inference_steps: int | List[int] = 50,
                verbose: bool = True) -> None:
     super().__init__(verbose)
@@ -32,9 +34,14 @@ class DiffusionEnsemble(Model):
     self.diffusers = DiffusersModel(diffusers, num_inference_steps, verbose)
     self.vqgan = VQGAN(vqgan_config_path, vqgan_ckpt_path, verbose)
 
+    # TODO: load the loss models dynamically based on user requirements
     # According to: https://github.com/richzhang/PerceptualSimilarity
     # Expects RGB images normalized to [-1, 1]
     self.perceptual_loss = LPIPS().eval()
+
+    # According to: https://github.com/openai/CLIP
+    # Expects unnormalized RGB images in [0.0, 1.0]
+    self.clip_image_loss = ImageEncoderCLIP(clip_path=clip_path)
 
   def compose(self,
               x: torch.Tensor,
@@ -78,7 +85,8 @@ class DiffusionEnsemble(Model):
               n_steps: int = 10_000,
               learn_rate: float = 15e-2,
               latent_from: str = 'noise',
-              decay: Tuple[float, float, float] = (40, 0.95, 2e-4),
+              loss_fun: str = 'clip',
+              decay: Tuple[float, float, float] = (100, 0.9, 2e-4),
               composition: str = 'bar') -> Tuple[torch.Tensor, torch.Tensor]:
     """Summary
 
@@ -93,10 +101,12 @@ class DiffusionEnsemble(Model):
         Can be one of: 'noise' | 'input'.
         composition (str): Indicate the type of operation to perform when
         mixing the images.
-        Can be one of: 'bar' | 'rvec'.
+        Can be one of: 'bar' | 'rvec' (baricentric | vector).
     """
     latent_from_options = ['noise', 'input']
     at_layer_options = ['preconv', 'prequant', 'postquant']
+    loss_fun_options = ['clip', 'perceptual']
+    assert loss_fun in loss_fun_options, f'invalid loss function, got: {loss_fun}'
     assert latent_from in latent_from_options, f'invalid latent_vector origin, got: {latent_from}'
     assert x.ndim == 5, f'invalid input tensor size, expected 5 but got: {x.ndim}'
     assert x.shape[1] == len(self.diffusers.repos), f'diffusers count mismatch, got: {x.shape[1]}'
@@ -121,18 +131,11 @@ class DiffusionEnsemble(Model):
       # Resize the vectors
       latent_vector = latent_vector.reshape((N, M, *latent_vector.shape[1:]))
 
-      # Random codebook vectors + reordering by transformer!
-      # Condition transformer based on 2 codebooks
-      # Like Cyclegan, diff between codebooks: noise -> dec -> enc -> codebook diff
-      # segmentation
-      # inception
-
       # Compose the latent features
       if composition == 'bar':
         latent_vector = torch.sum(coef.reshape((1, M, 1, 1, 1)) * latent_vector, dim=1)
       elif composition == 'rvec':
-        # mask = torch.cat([torch.zeros(128), torch.ones(128)], dim=0).to(self.device, dtype=torch.int64).reshape((16, 16))
-        mask: torch.Tensor = torch.randint(0, M, size=(l_H, l_W), device=self.device)
+        mask = torch.cat([torch.zeros(128), torch.ones(128)], dim=0).to(self.device, dtype=torch.int64).reshape((16, 16))
         mask: torch.Tensor = torch.nn.functional.one_hot(mask, M)
         mask: torch.Tensor = mask.permute((2, 0, 1))[None, :, None, ...]
         latent_vector = torch.sum(mask * latent_vector, dim=1)
@@ -162,32 +165,42 @@ class DiffusionEnsemble(Model):
 
       # Augment the image crops
       p_loss: List[torch.Tensor] = []
-      crop_size: List[int] = [256,]
-      crop_nums: List[int] = [1,]
+      i_loss: List[torch.Tensor] = []
+      crop_size: List[int] = [256, 64, 32]
+      crop_nums: List[int] = [1, 8, 16]
+      R: int = len(crop_nums)
       crop_imgs = self.crop_augment(inp_imgs,
                                                                  rec_imgs,
                                                                  crop_size,
                                                                  crop_nums,
                                                                  augment=False)
-      R = len(crop_nums)
+
+      # Use coefficients for each patch based on the inverse of their frequency
+      patch_loss_coefs = torch.cat([torch.ones((crop_num,)) / crop_num for crop_num in crop_nums], dim=0)
+      patch_loss_coefs = patch_loss_coefs.to(self.device)
 
       # Compute perceptual loss for all crop sizes
       for (input_crops, augmented_crops) in crop_imgs:
         c_loss: torch.Tensor = self.perceptual_loss(input_crops, augmented_crops)
         p_loss.append(c_loss.flatten(start_dim=0))
 
-      # Use coefficients for each patch based on the inverse of their frequency
-      patch_loss_coefs = torch.cat([torch.ones((crop_num,)) / crop_num for crop_num in crop_nums], dim=0)
-      patch_loss_coefs = patch_loss_coefs.to(self.device)
-
       # Compute the weighted perceptual loss
       p_loss: torch.Tensor = torch.cat(p_loss, dim=0).reshape((-1, N, M))
       p_loss = coef.tile((1, N, 1)) * p_loss
       p_loss = p_loss.sum(dim=2).T @ patch_loss_coefs.unsqueeze(1)
-      p_loss.squeeze(1)
+
+      # Compute clip loss for all crop sizes
+      for (input_crops, augmented_crops) in crop_imgs:
+        c_loss: torch.Tensor = self.clip_image_loss(input_crops, augmented_crops)
+        i_loss.append(c_loss.flatten(start_dim=0))
+
+      # Compute the weighted perceptual loss
+      i_loss: torch.Tensor = torch.cat(i_loss, dim=0).reshape((-1, N, M))
+      i_loss = coef.tile((1, N, 1)) * i_loss
+      i_loss = i_loss.sum(dim=2).T @ patch_loss_coefs.unsqueeze(1)
 
       # Total loss
-      loss = p_loss
+      loss = p_loss * 0.125 + i_loss * 1.0
 
       # Reset gradients
       optim.zero_grad()
