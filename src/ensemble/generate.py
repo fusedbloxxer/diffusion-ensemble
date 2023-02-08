@@ -268,7 +268,7 @@ class DiffusersOutput(object):
     max_rows: int = self.num_prompts * self.num_imgs_per_prompt
 
     # Define plot
-    f, ax = plt.subplots(nrows=max_rows, ncols=max_cols, figsize=(10, 10))
+    f, ax = plt.subplots(nrows=max_rows, ncols=max_cols, figsize=(15, 15))
 
     def show_image(i: int, skip: int, stride: int, model: str, img: torch.Tensor, prompt: str,
                    nrows: int, ncols: int, ax: plt.Axes) -> None:
@@ -305,7 +305,7 @@ class DiffusersOutput(object):
     plt.show()
 
   def save(self, root_dir: pb.Path, entry_dir: Optional[str] = None) -> None:
-    raise NotImplemented('Need to work on this') # TODO: reuse generated images by saving them
+    raise NotImplemented('Need to work on this')
 
     if entry_dir is None:
       timestamp = time.time()

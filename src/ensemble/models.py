@@ -34,7 +34,6 @@ class DiffusionEnsemble(Model):
     self.diffusers = DiffusersModel(diffusers, num_inference_steps, verbose)
     self.vqgan = VQGAN(vqgan_config_path, vqgan_ckpt_path, verbose)
 
-    # TODO: load the loss models dynamically based on user requirements
     # According to: https://github.com/richzhang/PerceptualSimilarity
     # Expects RGB images normalized to [-1, 1]
     self.perceptual_loss = LPIPS().eval()
